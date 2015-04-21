@@ -23,18 +23,31 @@ Puppet::Type.type(:volume_group).provide :lvm do
     end
 
     def physical_volumes=(new_volumes = [])
+        new_volumes_real = []
+        new_volumes.each{ |vol|
+            if File.ftype(vol) == "link" then
+                new_volumes_real << File.expand_path(File.readlink(vol),File.dirname(vol))
+            else
+                new_volumes_real << vol
+            end
+        }
         existing_volumes = physical_volumes
-        extraneous = existing_volumes - new_volumes
+        extraneous = existing_volumes - new_volumes_real
         extraneous.each { |volume| reduce_with(volume) }
-        missing = new_volumes - existing_volumes
+        missing = new_volumes_real - existing_volumes
         missing.each { |volume| extend_with(volume) }
     end
 
     def physical_volumes
         lines = pvs('-o', 'pv_name,vg_name', '--separator', ',')
-        lines.split(/\n/).grep(/,#{@resource[:name]}$/).map { |s|
-            s.split(/,/)[0].strip
-        }
+        lines.inject([]) do |memo, line|
+          pv, vg = line.split(',').map { |s| s.strip }
+          if vg == @resource[:name]
+            memo << pv
+          else
+            memo
+          end
+        end
     end
 
     private
